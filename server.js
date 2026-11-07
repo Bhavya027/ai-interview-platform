@@ -1,16 +1,26 @@
 const express = require('express');
+const http = require('http');
+const path = require('path');
+const { Server } = require('socket.io');
 const { sequelize } = require('./models');
+
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
 
 app.use(express.json());
-app.use('/api/auth', require('./routes/authRoutes'));
-app.use('/api/interviews', require('./routes/interviewRoutes'));
+app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/', (req, res) => {
   res.send('AI Interview Platform is running!');
 });
 
-app.listen(3000, async () => {
+app.use('/api/auth', require('./routes/authRoutes'));
+app.use('/api/interviews', require('./routes/interviewRoutes'));
+
+require('./sockets/interviewRoom')(io);
+
+server.listen(3000, async () => {
   console.log('Server running at http://localhost:3000');
   try {
     await sequelize.authenticate();
