@@ -3,176 +3,215 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Live Coding Room</title>
-  <style>
-    body { font-family: Arial, sans-serif; max-width: 800px; margin: 30px auto; padding: 0 16px; }
-    .row { display: flex; gap: 8px; margin-bottom: 12px; }
-    input { padding: 8px; flex: 1; }
-    button { padding: 8px 16px; cursor: pointer; }
-    textarea { width: 100%; height: 350px; font-family: monospace; font-size: 15px; padding: 10px; box-sizing: border-box; }
-    #status { margin: 8px 0; font-weight: bold; color: #2a7a2a; }
-    #status.error { color: #c0392b; }
-    #log { color: #555; font-size: 14px; }
-  </style>
+  <title>Interview room | AI Interview Platform</title>
+  <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
-  <h2>Live Coding Room</h2>
-
-  <div id="loginBox" class="row">
-    <input id="emailInput" placeholder="Email" />
-    <input id="passwordInput" type="password" placeholder="Password" />
-    <button id="loginBtn">Login</button>
+  <div class="navbar">
+    <a class="brand" href="/dashboard.html">AI Interview Platform</a>
+    <div class="nav-right">
+      <b id="userName"></b>
+      <a class="btn btn-outline btn-small" href="/dashboard.html">Dashboard</a>
+    </div>
   </div>
 
-  <div id="joinBox" class="row" style="display:none">
-    <input id="interviewInput" placeholder="Interview ID (example: 1)" />
-    <button id="joinBtn">Join Room</button>
+  <div class="container">
+    <div class="page-head">
+      <h1 id="roomTitle">Interview room</h1>
+      <p>Everything you type is shared live with the other person in this room.</p>
+    </div>
+
+    <div class="cols">
+      <div>
+        <div class="editor-top">
+          <b>Shared editor</b>
+          <span><span class="typing hidden" id="typing">typing...</span></span>
+        </div>
+        <div class="editor-wrap">
+          <div class="gutter" id="gutter">1</div>
+          <textarea id="editor" wrap="off" spellcheck="false" placeholder="Join the room, then start typing." disabled></textarea>
+        </div>
+      </div>
+
+      <aside class="sheet">
+        <h3>Session</h3>
+        <p class="status" id="status">Joining the room...</p>
+
+        <div class="side-label">Connection</div>
+        <div><span class="dot" id="dot"></span><span id="connText">Connecting</span></div>
+
+        <div class="side-label">You</div>
+        <div id="youLabel"></div>
+
+        <button class="btn btn-danger btn-block hidden" id="endBtn" style="margin-top: 20px">End interview</button>
+
+        <div class="side-label" style="margin-top: 22px">Activity</div>
+        <div class="activity" id="log"></div>
+      </aside>
+    </div>
+
+    <section class="sheet hidden" id="reviewSheet"></section>
   </div>
-
-  <button id="endBtn" style="display:none; margin-bottom:12px">End Interview</button>
-
-  <div id="status">Please login</div>
-
-  <textarea id="editor" placeholder="Join an interview room, then start typing code here..." disabled></textarea>
-
-  <div id="log"></div>
-  <div id="feedback"></div>
 
   <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/api.js"></script>
   <script>
-    let socket = null;
+    App.requireLogin();
+    const user = App.getUser();
+    const interviewId = new URLSearchParams(window.location.search).get('id');
 
-    const emailInput = document.getElementById('emailInput');
-    const passwordInput = document.getElementById('passwordInput');
-    const loginBtn = document.getElementById('loginBtn');
-    const loginBox = document.getElementById('loginBox');
-    const joinBox = document.getElementById('joinBox');
-    const interviewInput = document.getElementById('interviewInput');
-    const joinBtn = document.getElementById('joinBtn');
-    const endBtn = document.getElementById('endBtn');
-    const editor = document.getElementById('editor');
-    const status = document.getElementById('status');
-    const log = document.getElementById('log');
-
-    const feedbackBox = document.getElementById('feedback');
-
-function addList(title, items) {
-  const heading = document.createElement('b');
-  heading.textContent = title;
-  feedbackBox.appendChild(heading);
-
-  const list = document.createElement('ul');
-  items.forEach((item) => {
-    const li = document.createElement('li');
-    li.textContent = item;
-    list.appendChild(li);
-  });
-  feedbackBox.appendChild(list);
-}
-
-function renderFeedback(f) {
-  feedbackBox.innerHTML = '';
-
-  const title = document.createElement('h3');
-  title.textContent = 'AI Feedback' + (f.score !== null ? ' - Score: ' + f.score + '/10' : '');
-  feedbackBox.appendChild(title);
-
-  const summary = document.createElement('p');
-  summary.textContent = f.summary;
-  feedbackBox.appendChild(summary);
-
-  if (f.strengths.length) addList('Strengths', f.strengths);
-  if (f.improvements.length) addList('Improvements', f.improvements);
-}
-
-    function setStatus(message, isError) {
-      status.textContent = message;
-      status.className = isError ? 'error' : '';
+    if (!interviewId) {
+      window.location.href = '/dashboard.html';
     }
 
-    function addLog(message) {
-      const line = document.createElement('div');
-      line.textContent = message;
-      log.appendChild(line);
+    const $ = (id) => document.getElementById(id);
+    const make = (tag, cls, text) => App.make(tag, cls, text);
+    const editor = $('editor');
+    const endBtn = $('endBtn');
+
+    $('userName').textContent = user.name;
+    $('roomTitle').textContent = 'Interview #' + interviewId;
+    $('youLabel').textContent = user.name + ' (' + user.role + ')';
+
+    function setStatus(text, isError) {
+      $('status').textContent = text;
+      $('status').className = 'status' + (isError ? ' error' : '');
     }
 
-    function connectSocket(token) {
-      socket = io({ auth: { token } });
-
-      socket.on('connect_error', (err) => {
-        setStatus('Connection failed: ' + err.message, true);
-      });
-
-      socket.on('joined', ({ roomId, name, role }) => {
-        editor.disabled = false;
-        setStatus('Joined ' + roomId + ' as ' + name + ' (' + role + ')', false);
-        if (role === 'interviewer') {
-          endBtn.style.display = 'inline-block';
-        }
-      });
-
-      socket.on('join-error', (message) => {
-        editor.disabled = true;
-        setStatus(message, true);
-      });
-
-      socket.on('code-update', (code) => { editor.value = code; });
-      socket.on('user-joined', ({ name }) => addLog(name + ' joined the room'));
-      socket.on('user-left', ({ name }) => addLog(name + ' left the room'));
-
-      socket.on('interview-ended', () => {
-        editor.disabled = true;
-        endBtn.style.display = 'none';
-        setStatus('Interview ended. Code has been saved.', false);
-      });
-      socket.on('feedback-ready', (f) => {
-  renderFeedback(f);
-  setStatus('Interview ended. AI feedback is ready.', false);
-});
-
-socket.on('feedback-error', (message) => {
-  feedbackBox.textContent = message;
-});
+    function setConnection(online) {
+      $('dot').className = 'dot' + (online ? ' online' : '');
+      $('connText').textContent = online ? 'Connected' : 'Disconnected';
     }
 
-    loginBtn.addEventListener('click', async () => {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: emailInput.value.trim(),
-          password: passwordInput.value
-        })
-      });
-      const data = await res.json();
+    function addLog(text) {
+      const time = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+      $('log').appendChild(make('div', null, time + '  ' + text));
+    }
 
-      if (!res.ok) {
-        setStatus(data.message, true);
-        return;
-      }
+    /* ---------- Line numbers ---------- */
+    function updateGutter() {
+      const count = editor.value.split('\n').length;
+      const numbers = [];
+      for (let n = 1; n <= count; n++) numbers.push(n);
+      $('gutter').textContent = numbers.join('\n');
+      $('gutter').scrollTop = editor.scrollTop;
+    }
+    editor.addEventListener('scroll', () => { $('gutter').scrollTop = editor.scrollTop; });
 
-      loginBox.style.display = 'none';
-      joinBox.style.display = 'flex';
-      setStatus('Logged in as ' + data.user.name + ' (' + data.user.role + ')', false);
-      connectSocket(data.token);
-    });
+    /* ---------- Review card ---------- */
+    function showReviewSheet(build) {
+      const sheet = $('reviewSheet');
+      sheet.innerHTML = '';
+      sheet.classList.remove('hidden');
+      sheet.appendChild(make('h2', null, 'AI review'));
+      sheet.firstChild.style.marginBottom = '18px';
+      build(sheet);
+      sheet.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
 
-    joinBtn.addEventListener('click', () => {
-      const interviewId = interviewInput.value.trim();
-      if (!interviewId) {
-        setStatus('Please enter an interview ID', true);
-        return;
-      }
+    function backLink() {
+      const link = make('a', 'btn', 'Back to dashboard');
+      link.href = '/dashboard.html';
+      link.style.marginTop = '20px';
+      return link;
+    }
+
+    /* ---------- Socket ---------- */
+    const socket = io({ auth: { token: App.getToken() } });
+
+    socket.on('connect', () => {
+      setConnection(true);
       socket.emit('join-room', { interviewId });
     });
 
-    endBtn.addEventListener('click', () => {
-      socket.emit('end-interview');
+    socket.on('disconnect', () => {
+      setConnection(false);
+      setStatus('Connection lost. Trying to reconnect...', true);
     });
 
+    socket.on('connect_error', (err) => {
+      setConnection(false);
+      if (err.message.toLowerCase().includes('token') || err.message.includes('logged in')) {
+        App.logout();
+        return;
+      }
+      setStatus('Could not connect: ' + err.message, true);
+    });
+
+    socket.on('joined', ({ name, role }) => {
+      editor.disabled = false;
+      setStatus('You are in the room as ' + name + '.', false);
+      addLog('You joined');
+      if (role === 'interviewer') {
+        endBtn.classList.remove('hidden');
+      }
+    });
+
+    socket.on('join-error', (message) => {
+      editor.disabled = true;
+      endBtn.classList.add('hidden');
+      setStatus(message, true);
+    });
+
+    const typingTag = $('typing');
+    let typingTimer;
+    socket.on('code-update', (code) => {
+      editor.value = code;
+      updateGutter();
+      typingTag.classList.remove('hidden');
+      clearTimeout(typingTimer);
+      typingTimer = setTimeout(() => typingTag.classList.add('hidden'), 1500);
+    });
+
+    socket.on('user-joined', ({ name }) => addLog(name + ' joined'));
+    socket.on('user-left', ({ name }) => addLog(name + ' left'));
+
+    socket.on('interview-ended', () => {
+      editor.disabled = true;
+      endBtn.classList.add('hidden');
+      setStatus('Interview ended. Your code is saved.', false);
+      addLog('Interview ended');
+      showReviewSheet((sheet) => {
+        sheet.appendChild(make('p', 'muted', 'Reviewing the code. This can take up to a minute.'));
+      });
+    });
+
+    socket.on('feedback-ready', (f) => {
+      showReviewSheet((sheet) => {
+        sheet.appendChild(App.reviewEl(f, f.score));
+        sheet.appendChild(backLink());
+      });
+    });
+
+    socket.on('feedback-error', (message) => {
+      showReviewSheet((sheet) => {
+        sheet.appendChild(make('p', null, message + '. The interviewer can generate the review again from the dashboard.'));
+        sheet.appendChild(backLink());
+      });
+    });
+
+    /* ---------- Editor ---------- */
     editor.addEventListener('input', () => {
+      updateGutter();
       socket.emit('code-change', { code: editor.value });
     });
+
+    // Tab inserts two spaces instead of moving focus
+    editor.addEventListener('keydown', (e) => {
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        editor.setRangeText('  ', editor.selectionStart, editor.selectionEnd, 'end');
+        editor.dispatchEvent(new Event('input'));
+      }
+    });
+
+    endBtn.addEventListener('click', () => {
+      if (confirm('End the interview and generate the AI review?')) {
+        socket.emit('end-interview');
+      }
+    });
+
+    updateGutter();
   </script>
 </body>
 </html>

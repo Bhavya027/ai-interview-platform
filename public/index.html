@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Interview Platform</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="navbar">
+    <a class="brand" href="/index.html">AI Interview Platform</a>
+  </div>
+
+  <div class="container landing">
+    <div>
+      <h1>Interview live. Get graded right after.</h1>
+      <p class="lead">Book a slot, write code side by side with your interviewer, and get an AI review of your solution as soon as the round ends.</p>
+
+      <div class="specimen">
+        <span class="file">interview-4.js</span>
+<pre><code>function add(a, b) {
+<span class="hl">  return a + b;</span>}
+console.log(add(2, 3));</code></pre>
+        <div class="grade draw" id="specimenGrade"></div>
+        <p class="pen">No type check. What happens if a is a string?</p>
+      </div>
+    </div>
+
+    <div class="sheet">
+      <div class="tabs">
+        <button class="tab active" id="loginTab" type="button">Log in</button>
+        <button class="tab" id="registerTab" type="button">Create account</button>
+      </div>
+
+      <p class="form-error hidden" id="formError"></p>
+
+      <form id="loginForm">
+        <div class="field">
+          <label for="loginEmail">Email</label>
+          <input type="email" id="loginEmail" required />
+        </div>
+        <div class="field">
+          <label for="loginPassword">Password</label>
+          <input type="password" id="loginPassword" required />
+        </div>
+        <button class="btn btn-block" type="submit">Log in</button>
+      </form>
+
+      <form id="registerForm" class="hidden">
+        <div class="field">
+          <label for="registerName">Full name</label>
+          <input type="text" id="registerName" required />
+        </div>
+        <div class="field">
+          <label for="registerEmail">Email</label>
+          <input type="email" id="registerEmail" required />
+        </div>
+        <div class="field">
+          <label for="registerPassword">Password (at least 6 characters)</label>
+          <input type="password" id="registerPassword" minlength="6" required />
+        </div>
+        <div class="field">
+          <label for="registerRole">I am joining as</label>
+          <select id="registerRole">
+            <option value="candidate">A candidate</option>
+            <option value="interviewer">An interviewer</option>
+          </select>
+        </div>
+        <button class="btn btn-block" type="submit">Create account</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    if (App.getToken()) {
+      window.location.href = '/dashboard.html';
+    }
+
+    const $ = (id) => document.getElementById(id);
+
+    // Circled grade in the sample code window
+    const sample = App.gradeEl(7);
+    $('specimenGrade').replaceWith(sample);
+
+    function showError(text) {
+      $('formError').textContent = text;
+      $('formError').classList.remove('hidden');
+    }
+
+    function showTab(tab) {
+      const isLogin = tab === 'login';
+      $('loginForm').classList.toggle('hidden', !isLogin);
+      $('registerForm').classList.toggle('hidden', isLogin);
+      $('loginTab').classList.toggle('active', isLogin);
+      $('registerTab').classList.toggle('active', !isLogin);
+      $('formError').classList.add('hidden');
+    }
+
+    $('loginTab').addEventListener('click', () => showTab('login'));
+    $('registerTab').addEventListener('click', () => showTab('register'));
+
+    async function login(email, password) {
+      const data = await App.request('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password })
+      });
+      App.saveLogin(data.token, data.user);
+      window.location.href = '/dashboard.html';
+    }
+
+    $('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        await login($('loginEmail').value.trim(), $('loginPassword').value);
+      } catch (err) {
+        showError(err.message);
+      }
+    });
+
+    $('registerForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = $('registerEmail').value.trim();
+      const password = $('registerPassword').value;
+
+      try {
+        await App.request('/auth/register', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: $('registerName').value.trim(),
+            email,
+            password,
+            role: $('registerRole').value
+          })
+        });
+        await login(email, password);
+      } catch (err) {
+        showError(err.message);
+      }
+    });
+  </script>
+</body>
+</html>

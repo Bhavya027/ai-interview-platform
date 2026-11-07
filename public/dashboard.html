@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard | AI Interview Platform</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="navbar">
+    <a class="brand" href="/dashboard.html">AI Interview Platform</a>
+    <div class="nav-right">
+      <span><b id="userName"></b> <span class="role-tag" id="userRole"></span></span>
+      <button class="btn btn-outline btn-small" id="logoutBtn">Log out</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="page-head">
+      <h1 id="greeting"></h1>
+      <p id="intro"></p>
+    </div>
+
+    <div class="tally">
+      <div><b id="statTotal">0</b><span>Total interviews</span></div>
+      <div><b id="statUpcoming">0</b><span>Scheduled</span></div>
+      <div><b id="statCompleted">0</b><span>Completed</span></div>
+    </div>
+
+    <div class="cols">
+      <section class="sheet ledger">
+        <div class="ledger-head"><h2>Your interviews</h2></div>
+        <div class="ledger-body">
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr><th class="no">#</th><th>When</th><th>With</th><th>Status</th><th></th></tr>
+              </thead>
+              <tbody id="interviewRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <aside>
+        <div class="sheet hidden" id="createCard">
+          <h3>Open a slot</h3>
+          <p class="muted" style="margin-bottom: 14px">Candidates see open slots and can book them.</p>
+          <form id="slotForm">
+            <div class="field">
+              <label for="slotTime">Date and time</label>
+              <input type="datetime-local" id="slotTime" required />
+            </div>
+            <button class="btn btn-block" type="submit">Create slot</button>
+          </form>
+        </div>
+
+        <div class="sheet hidden" id="slotsCard">
+          <h3>Open slots</h3>
+          <div id="slotList"></div>
+        </div>
+      </aside>
+    </div>
+
+    <section class="sheet hidden" id="reviewSheet"></section>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    App.requireLogin();
+    const user = App.getUser();
+    const $ = (id) => document.getElementById(id);
+    const make = (tag, cls, text) => App.make(tag, cls, text);
+
+    $('userName').textContent = user.name;
+    $('userRole').textContent = user.role;
+    $('logoutBtn').addEventListener('click', () => App.logout());
+
+    const hour = new Date().getHours();
+    const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+    $('greeting').textContent = greeting + ', ' + user.name.split(' ')[0] + '.';
+    $('intro').textContent = user.role === 'interviewer'
+      ? 'Open slots for candidates, run the live round, and review their code afterwards.'
+      : 'Book a slot, code live with your interviewer, and read your AI review when the round ends.';
+
+    if (user.role === 'interviewer') {
+      $('createCard').classList.remove('hidden');
+    } else {
+      $('slotsCard').classList.remove('hidden');
+    }
+
+    function statusOf(interview) {
+      if (interview.status === 'completed') return 'completed';
+      if (!interview.candidate) return 'open';
+      return 'scheduled';
+    }
+
+    /* ---------- Interview list ---------- */
+    async function loadInterviews() {
+      const { interviews } = await App.request('/interviews/my');
+
+      $('statTotal').textContent = interviews.length;
+      $('statUpcoming').textContent = interviews.filter((i) => i.status === 'scheduled').length;
+      $('statCompleted').textContent = interviews.filter((i) => i.status === 'completed').length;
+
+      const body = $('interviewRows');
+      body.innerHTML = '';
+
+      if (!interviews.length) {
+        const row = make('tr');
+        const cell = make('td', 'empty', user.role === 'interviewer'
+          ? 'Nothing here yet. Create a slot and it will appear in this list.'
+          : 'No interviews yet. Book an open slot and it will appear here.');
+        cell.colSpan = 5;
+        row.appendChild(cell);
+        body.appendChild(row);
+        return;
+      }
+
+      interviews.forEach((i) => {
+        const row = make('tr');
+        row.appendChild(make('td', 'no', i.id));
+        row.appendChild(make('td', null, App.formatDate(i.scheduledAt)));
+
+        let other;
+        if (user.role === 'interviewer') {
+          other = i.candidate ? i.candidate.name : 'Not booked yet';
+        } else {
+          other = i.interviewer ? i.interviewer.name : '-';
+        }
+        row.appendChild(make('td', null, other));
+
+        const status = statusOf(i);
+        const statusCell = make('td');
+        statusCell.appendChild(make('span', 'stamp stamp-' + status, status));
+        row.appendChild(statusCell);
+
+        const actionCell = make('td');
+        if (i.status === 'completed') {
+          const btn = make('button', 'btn btn-outline btn-small', 'View review');
+          btn.addEventListener('click', () => showReview(i.id));
+          actionCell.appendChild(btn);
+        } else if (i.candidate) {
+          const link = make('a', 'btn btn-small', 'Join room');
+          link.href = '/room.html?id=' + i.id;
+          actionCell.appendChild(link);
+        }
+        row.appendChild(actionCell);
+
+        body.appendChild(row);
+      });
+    }
+
+    /* ---------- Candidate: open slots ---------- */
+    async function loadSlots() {
+      if (user.role !== 'candidate') return;
+
+      const { slots } = await App.request('/interviews/available');
+      const list = $('slotList');
+      list.innerHTML = '';
+
+      if (!slots.length) {
+        list.appendChild(make('p', 'muted', 'No open slots right now. Check back once an interviewer opens one.'));
+        return;
+      }
+
+      slots.forEach((s) => {
+        const row = make('div', 'slot');
+
+        const info = make('div');
+        info.appendChild(make('b', null, App.formatDate(s.scheduledAt)));
+        info.appendChild(make('small', null, 'with ' + s.interviewer.name));
+
+        const btn = make('button', 'btn btn-small', 'Book');
+        btn.addEventListener('click', () => bookSlot(s.id));
+
+        row.appendChild(info);
+        row.appendChild(btn);
+        list.appendChild(row);
+      });
+    }
+
+    async function bookSlot(id) {
+      try {
+        await App.request('/interviews/' + id + '/book', { method: 'POST' });
+        App.toast('Booked');
+      } catch (err) {
+        App.toast(err.message, true);
+      }
+      loadSlots();
+      loadInterviews();
+    }
+
+    /* ---------- Interviewer: create slot ---------- */
+    $('slotForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        await App.request('/interviews', {
+          method: 'POST',
+          body: JSON.stringify({ scheduledAt: new Date($('slotTime').value).toISOString() })
+        });
+        App.toast('Slot created');
+        e.target.reset();
+        loadInterviews();
+      } catch (err) {
+        App.toast(err.message, true);
+      }
+    });
+
+    /* ---------- Review ---------- */
+    async function showReview(id) {
+      try {
+        const { result } = await App.request('/interviews/' + id + '/result');
+        renderReview(id, result);
+      } catch (err) {
+        App.toast(err.message, true);
+      }
+    }
+
+    function renderReview(id, result) {
+      const sheet = $('reviewSheet');
+      sheet.innerHTML = '';
+      sheet.classList.remove('hidden');
+
+      const head = make('div', 'sheet-head');
+      head.appendChild(make('h2', null, 'Interview #' + id + ' review'));
+      const close = make('button', 'btn btn-outline btn-small', 'Close');
+      close.addEventListener('click', () => sheet.classList.add('hidden'));
+      head.appendChild(close);
+      sheet.appendChild(head);
+
+      if (result.feedback) {
+        sheet.appendChild(App.reviewEl(result.feedback, result.score));
+      } else {
+        sheet.appendChild(make('p', 'muted', 'There is no AI review for this interview yet.'));
+      }
+
+      if (user.role === 'interviewer') {
+        const btn = make('button', 'btn btn-small', result.feedback ? 'Regenerate review' : 'Generate review');
+        btn.style.marginTop = '14px';
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          btn.textContent = 'Reviewing... (up to 30 seconds)';
+          try {
+            await App.request('/interviews/' + id + '/feedback', { method: 'POST' });
+            App.toast('Review generated');
+            showReview(id);
+          } catch (err) {
+            App.toast(err.message, true);
+            btn.disabled = false;
+            btn.textContent = 'Try again';
+          }
+        });
+        sheet.appendChild(btn);
+      }
+
+      sheet.appendChild(make('h3', 'code-title', 'Submitted code'));
+      sheet.appendChild(make('pre', 'code', result.code || 'No code was written in this interview.'));
+
+      sheet.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    loadInterviews().catch((err) => App.toast(err.message, true));
+    loadSlots().catch((err) => App.toast(err.message, true));
+  </script>
+</body>
+</html>
