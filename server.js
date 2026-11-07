@@ -4,6 +4,7 @@ const app = express();
 
 app.use(express.json());
 app.use('/api/auth', require('./routes/authRoutes'));
+app.use('/api/interviews', require('./routes/interviewRoutes'));
 
 app.get('/', (req, res) => {
   res.send('AI Interview Platform is running!');
