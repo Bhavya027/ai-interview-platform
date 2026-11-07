@@ -1,7 +1,10 @@
 const jwt = require('jsonwebtoken');
-const { Interview, User } = require('../models');
+const { Interview, User, Result } = require('../models');
 
 module.exports = (io) => {
+  // Latest code of each room is kept in memory until the interview ends
+  const roomCode = {};
+
   // Runs once when a socket connects: checks the JWT
   io.use((socket, next) => {
     const token = socket.handshake.auth.token;
@@ -33,15 +36,25 @@ module.exports = (io) => {
           return socket.emit('join-error', 'You are not part of this interview');
         }
 
+        if (interview.status === 'completed') {
+          return socket.emit('join-error', 'This interview has already ended');
+        }
+
         const user = await User.findByPk(userId);
         const roomId = 'interview-' + interviewId;
 
         socket.join(roomId);
         socket.data.roomId = roomId;
+        socket.data.interviewId = interviewId;
         socket.data.name = user.name;
 
         socket.emit('joined', { roomId, name: user.name, role: user.role });
         socket.to(roomId).emit('user-joined', { name: user.name });
+
+        // A late joiner receives the code written so far
+        if (roomCode[roomId]) {
+          socket.emit('code-update', roomCode[roomId]);
+        }
       } catch (err) {
         socket.emit('join-error', 'Server error');
       }
@@ -51,7 +64,37 @@ module.exports = (io) => {
     socket.on('code-change', ({ code }) => {
       const { roomId } = socket.data;
       if (roomId) {
+        roomCode[roomId] = code;
         socket.to(roomId).emit('code-update', code);
+      }
+    });
+
+    // Only the interviewer can end the interview
+    socket.on('end-interview', async () => {
+      try {
+        const { roomId, interviewId } = socket.data;
+
+        if (!roomId) return;
+
+        if (socket.data.user.role !== 'interviewer') {
+          return socket.emit('join-error', 'Only the interviewer can end the interview');
+        }
+
+        const code = roomCode[roomId] || '';
+
+        const existing = await Result.findOne({ where: { interviewId } });
+        if (existing) {
+          await existing.update({ code });
+        } else {
+          await Result.create({ interviewId, code });
+        }
+
+        await Interview.update({ status: 'completed' }, { where: { id: interviewId } });
+
+        delete roomCode[roomId];
+        io.to(roomId).emit('interview-ended');
+      } catch (err) {
+        socket.emit('join-error', 'Could not end the interview');
       }
     });
 

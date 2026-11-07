@@ -29,6 +29,8 @@
     <button id="joinBtn">Join Room</button>
   </div>
 
+  <button id="endBtn" style="display:none; margin-bottom:12px">End Interview</button>
+
   <div id="status">Please login</div>
 
   <textarea id="editor" placeholder="Join an interview room, then start typing code here..." disabled></textarea>
@@ -46,6 +48,7 @@
     const joinBox = document.getElementById('joinBox');
     const interviewInput = document.getElementById('interviewInput');
     const joinBtn = document.getElementById('joinBtn');
+    const endBtn = document.getElementById('endBtn');
     const editor = document.getElementById('editor');
     const status = document.getElementById('status');
     const log = document.getElementById('log');
@@ -71,6 +74,9 @@
       socket.on('joined', ({ roomId, name, role }) => {
         editor.disabled = false;
         setStatus('Joined ' + roomId + ' as ' + name + ' (' + role + ')', false);
+        if (role === 'interviewer') {
+          endBtn.style.display = 'inline-block';
+        }
       });
 
       socket.on('join-error', (message) => {
@@ -81,6 +87,12 @@
       socket.on('code-update', (code) => { editor.value = code; });
       socket.on('user-joined', ({ name }) => addLog(name + ' joined the room'));
       socket.on('user-left', ({ name }) => addLog(name + ' left the room'));
+
+      socket.on('interview-ended', () => {
+        editor.disabled = true;
+        endBtn.style.display = 'none';
+        setStatus('Interview ended. Code has been saved.', false);
+      });
     }
 
     loginBtn.addEventListener('click', async () => {
@@ -112,6 +124,10 @@
         return;
       }
       socket.emit('join-room', { interviewId });
+    });
+
+    endBtn.addEventListener('click', () => {
+      socket.emit('end-interview');
     });
 
     editor.addEventListener('input', () => {
