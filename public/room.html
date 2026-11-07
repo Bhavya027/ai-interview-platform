@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Live Coding Room</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 800px; margin: 30px auto; padding: 0 16px; }
+    .row { display: flex; gap: 8px; margin-bottom: 12px; }
+    input { padding: 8px; flex: 1; }
+    button { padding: 8px 16px; cursor: pointer; }
+    textarea { width: 100%; height: 350px; font-family: monospace; font-size: 15px; padding: 10px; box-sizing: border-box; }
+    #status { color: #2a7a2a; margin: 8px 0; font-weight: bold; }
+    #log { color: #555; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <h2>Live Coding Room</h2>
+
+  <div class="row">
+    <input id="nameInput" placeholder="Your name" />
+    <input id="roomInput" placeholder="Room ID (example: 1)" />
+    <button id="joinBtn">Join Room</button>
+  </div>
+
+  <div id="status">Not connected to any room</div>
+
+  <textarea id="editor" placeholder="Join a room, then start typing code here..." disabled></textarea>
+
+  <div id="log"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    let roomId = null;
+
+    const nameInput = document.getElementById('nameInput');
+    const roomInput = document.getElementById('roomInput');
+    const joinBtn = document.getElementById('joinBtn');
+    const editor = document.getElementById('editor');
+    const status = document.getElementById('status');
+    const log = document.getElementById('log');
+
+    function addLog(message) {
+      const line = document.createElement('div');
+      line.textContent = message;
+      log.appendChild(line);
+    }
+
+    joinBtn.addEventListener('click', () => {
+      const name = nameInput.value.trim();
+      const room = roomInput.value.trim();
+
+      if (!name || !room) {
+        alert('Please enter your name and room ID');
+        return;
+      }
+
+      roomId = room;
+      socket.emit('join-room', { roomId, name });
+      editor.disabled = false;
+      status.textContent = 'Joined room ' + roomId + ' as ' + name;
+    });
+
+    // Send code to the server on every change
+    editor.addEventListener('input', () => {
+      if (roomId) {
+        socket.emit('code-change', { roomId, code: editor.value });
+      }
+    });
+
+    // Receive code typed by the other person
+    socket.on('code-update', (code) => {
+      editor.value = code;
+    });
+
+    socket.on('user-joined', ({ name }) => addLog(name + ' joined the room'));
+    socket.on('user-left', ({ name }) => addLog(name + ' left the room'));
+  </script>
+</body>
+</html>
