@@ -11,10 +11,6 @@ const io = new Server(server);
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-app.get('/', (req, res) => {
-  res.send('AI Interview Platform is running!');
-});
-
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/interviews', require('./routes/interviewRoutes'));
 
