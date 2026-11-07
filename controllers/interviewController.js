@@ -1,5 +1,6 @@
 const { Op } = require('sequelize');
-const { Interview, User } = require('../models');
+const { Interview, User, Result } = require('../models');
+const { getCodeFeedback } = require('../services/aiFeedback');
 
 // Interviewer creates an open slot
 exports.createSlot = async (req, res) => {
@@ -84,6 +85,75 @@ exports.getMyInterviews = async (req, res) => {
     });
 
     res.json({ interviews });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+// Interviewer can (re)generate AI feedback from the saved code
+exports.generateFeedback = async (req, res) => {
+  try {
+    const interview = await Interview.findByPk(req.params.id);
+
+    if (!interview) {
+      return res.status(404).json({ message: 'Interview not found' });
+    }
+    if (interview.interviewerId !== req.user.id) {
+      return res.status(403).json({ message: 'Only the interviewer of this interview can do this' });
+    }
+
+    const result = await Result.findOne({ where: { interviewId: interview.id } });
+
+    if (!result || !result.code || !result.code.trim()) {
+      return res.status(400).json({ message: 'No saved code found for this interview' });
+    }
+
+    const feedback = await getCodeFeedback(result.code);
+
+    await result.update({
+      score: feedback.score,
+      aiFeedback: JSON.stringify(feedback)
+    });
+
+    res.json({ message: 'AI feedback generated', feedback });
+  } catch (err) {
+    res.status(500).json({
+      message: 'Could not generate AI feedback',
+      error: err.message,
+      reason: err.cause ? String(err.cause) : undefined
+    });
+  }
+};
+
+// Candidate or interviewer can read the saved result
+exports.getResult = async (req, res) => {
+  try {
+    const interview = await Interview.findByPk(req.params.id);
+
+    if (!interview) {
+      return res.status(404).json({ message: 'Interview not found' });
+    }
+
+    const isMember =
+      interview.candidateId === req.user.id || interview.interviewerId === req.user.id;
+
+    if (!isMember) {
+      return res.status(403).json({ message: 'You are not part of this interview' });
+    }
+
+    const result = await Result.findOne({ where: { interviewId: interview.id } });
+
+    if (!result) {
+      return res.status(404).json({ message: 'No result saved yet' });
+    }
+
+    res.json({
+      result: {
+        interviewId: result.interviewId,
+        code: result.code,
+        score: result.score,
+        feedback: result.aiFeedback ? JSON.parse(result.aiFeedback) : null
+      }
+    });
   } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message });
   }

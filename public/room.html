@@ -36,6 +36,7 @@
   <textarea id="editor" placeholder="Join an interview room, then start typing code here..." disabled></textarea>
 
   <div id="log"></div>
+  <div id="feedback"></div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
@@ -52,6 +53,37 @@
     const editor = document.getElementById('editor');
     const status = document.getElementById('status');
     const log = document.getElementById('log');
+
+    const feedbackBox = document.getElementById('feedback');
+
+function addList(title, items) {
+  const heading = document.createElement('b');
+  heading.textContent = title;
+  feedbackBox.appendChild(heading);
+
+  const list = document.createElement('ul');
+  items.forEach((item) => {
+    const li = document.createElement('li');
+    li.textContent = item;
+    list.appendChild(li);
+  });
+  feedbackBox.appendChild(list);
+}
+
+function renderFeedback(f) {
+  feedbackBox.innerHTML = '';
+
+  const title = document.createElement('h3');
+  title.textContent = 'AI Feedback' + (f.score !== null ? ' - Score: ' + f.score + '/10' : '');
+  feedbackBox.appendChild(title);
+
+  const summary = document.createElement('p');
+  summary.textContent = f.summary;
+  feedbackBox.appendChild(summary);
+
+  if (f.strengths.length) addList('Strengths', f.strengths);
+  if (f.improvements.length) addList('Improvements', f.improvements);
+}
 
     function setStatus(message, isError) {
       status.textContent = message;
@@ -93,6 +125,14 @@
         endBtn.style.display = 'none';
         setStatus('Interview ended. Code has been saved.', false);
       });
+      socket.on('feedback-ready', (f) => {
+  renderFeedback(f);
+  setStatus('Interview ended. AI feedback is ready.', false);
+});
+
+socket.on('feedback-error', (message) => {
+  feedbackBox.textContent = message;
+});
     }
 
     loginBtn.addEventListener('click', async () => {

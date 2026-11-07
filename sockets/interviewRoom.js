@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { Interview, User, Result } = require('../models');
+const { getCodeFeedback } = require('../services/aiFeedback');
 
 module.exports = (io) => {
   // Latest code of each room is kept in memory until the interview ends
@@ -93,6 +94,25 @@ module.exports = (io) => {
 
         delete roomCode[roomId];
         io.to(roomId).emit('interview-ended');
+
+        // AI feedback runs after the interview is closed, so nobody waits for it
+        if (!code.trim()) {
+          return io.to(roomId).emit('feedback-error', 'No code was written, so there is nothing to review');
+        }
+
+        try {
+          const feedback = await getCodeFeedback(code);
+
+          await Result.update(
+            { score: feedback.score, aiFeedback: JSON.stringify(feedback) },
+            { where: { interviewId } }
+          );
+
+          io.to(roomId).emit('feedback-ready', feedback);
+        } catch (aiErr) {
+          console.log('AI feedback failed:', aiErr.message, aiErr.cause);
+          io.to(roomId).emit('feedback-error', 'AI feedback could not be generated');
+        }
       } catch (err) {
         socket.emit('join-error', 'Could not end the interview');
       }
