@@ -3,11 +3,12 @@ const http = require('http');
 const path = require('path');
 const { Server } = require('socket.io');
 const { sequelize } = require('./models');
+const yoga = require('./gql/yoga');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
-
+app.use(yoga.graphqlEndpoint, yoga);
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
