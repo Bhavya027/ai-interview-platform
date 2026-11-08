@@ -8,6 +8,7 @@ const yoga = require('./gql/yoga');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
+
 app.use(yoga.graphqlEndpoint, yoga);
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -17,8 +18,10 @@ app.use('/api/interviews', require('./routes/interviewRoutes'));
 
 require('./sockets/interviewRoom')(io);
 
-server.listen(3000, async () => {
-  console.log('Server running at http://localhost:3000');
+const PORT = process.env.PORT || 3000;
+
+server.listen(PORT, async () => {
+  console.log('Server running on port ' + PORT);  
   try {
     await sequelize.authenticate();
     console.log('Database connected successfully');
