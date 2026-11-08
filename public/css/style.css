@@ -437,3 +437,57 @@ pre.code {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ---------- Editor layout fix (long code) ---------- */
+.cols > div {
+  min-width: 0; /* lets the editor shrink instead of overflowing the column */
+}
+
+.editor-wrap {
+  display: flex;
+  align-items: stretch;
+  height: 480px;
+  overflow: auto;            /* ONE scroll area for gutter + code together */
+  background: #0d1730;
+  border-radius: 6px;
+  position: relative;
+}
+
+.editor-wrap .gutter {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  flex: 0 0 auto;
+  min-width: 48px;
+  padding: 14px 10px;
+  box-sizing: border-box;
+  text-align: right;
+  white-space: pre;
+  overflow: hidden;
+  background: #0a1328;
+  color: #6b7a99;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.editor-wrap #editor {
+  flex: 1 0 auto;
+  min-width: 100%;
+  min-height: 100%;
+  box-sizing: border-box;
+  padding: 14px 16px;
+  margin: 0;
+  border: 0;
+  outline: 0;
+  resize: none;
+  overflow: hidden;          /* no inner scrollbars, wrapper scrolls */
+  white-space: pre;
+  field-sizing: content;     /* grows with the code (Chrome/Edge/Brave) */
+  background: transparent;
+  color: #e8eefc;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  line-height: 20px;
+  tab-size: 2;
+}
