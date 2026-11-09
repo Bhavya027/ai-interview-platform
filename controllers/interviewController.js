@@ -1,6 +1,7 @@
 const { Op } = require('sequelize');
 const { Interview, User, Result } = require('../models');
 const { getCodeFeedback } = require('../services/aiFeedback');
+const { sendBookingEmail } = require('../services/mailer');
 
 // Interviewer creates an open slot
 exports.createSlot = async (req, res) => {
@@ -63,7 +64,22 @@ exports.bookSlot = async (req, res) => {
       return res.status(409).json({ message: 'Slot not found or already booked' });
     }
 
-    const interview = await Interview.findByPk(req.params.id);
+    const interview = await Interview.findByPk(req.params.id, {
+      include: [{ model: User, as: 'interviewer', attributes: ['id', 'name', 'email'] }]
+    });
+    const candidate = await User.findByPk(req.user.id, {
+      attributes: ['id', 'name', 'email']
+    });
+
+    // Send the confirmation email in the background.
+    // The booking is already saved, so a failed email never breaks the response.
+    sendBookingEmail({
+      to: candidate.email,
+      name: candidate.name,
+      startTime: interview.scheduledAt,
+      interviewerName: interview.interviewer ? interview.interviewer.name : null
+    }).catch((err) => console.error('Email error:', err.message));
+
     res.json({ message: 'Interview booked successfully', interview });
   } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message });
